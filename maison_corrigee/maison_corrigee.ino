@@ -36,22 +36,29 @@ const int gazMax = 20;      // Valeur nécessaire pour déclancher l'alarme de g
 const int gazMin = 15;      // Valeur nécessaire pour éteindre l'alarme de gaz
 bool gazFlag = false;       // Indicateur de présence de gaz
 bool gazAlarme = false;     // État de l'alarme de gaz
+const int gazAlarmeTag = 1; // Tag pour l'alarme de gaz dans la pile d'alarme
 
 const int lumiereMax = 600; // Valeur indiquant le jour
 const int lumiereMin = 200; // Valeur indiquant la nuit
 bool lumiereFlag = false;   // Indicateur qu'on doit vérifier le mouvement
 bool mouvementFlag = false; // Indicateur de présence de mouvement
 bool mouvementAlarme = false; // État de l'alarme de mouvement
+const int mouvementAlarmeTag = 2; // Tag pour l'alarme de mouvement dans la pile d'alarme
 
 const int pluieMax = 500; // Valeur indiquant qu'il y a de la pluie
 const int pluieMin = 150; // Valeur indiquant que le toit est sec
 bool pluieFlag = false;   // Indicateur de présence de pluie
 bool pluieAlarme = false; // État de l'alarme de pluie
+const int pluieAlarmeTag = 3; // Tag pour l'alarme de pluie dans la pile d'alarme
 
 const int terreMax = 130; // Valeur indiquant que la terre est humide
 const int terreMin = 20;  // Valeur indiquant que la terre est sèche
 bool terreFlag = false;   // Indicateur que la terre a soif
 bool terreAlarme = false; // État de l'alarme de terre
+const int terreAlarmeTag = 4; // Tag pour l'alarme d'humidité de la terre dans la pile d'alarme
+
+bool alarmesCourantes[] = {false, false, false, false};
+bool alarmesHistorique[] = {false, false, false, false};
 
 void setup() {
   Serial.begin(9600);       // Activer la console
@@ -88,6 +95,9 @@ void setup() {
 
 void loop() {
   traiterDetecteurs();
+  activerAlarmes();
+  traiterAlarmes();
+  traiterCommandes();
 }
 
 void traiterDetecteurs() {
@@ -100,82 +110,144 @@ void traiterDetecteurs() {
 }
 
 void checkGas() {
-  int gaz = analogRead(gazPin);
+  int gaz = analogRead(gazPin); // Lit la valeur de gaz
   if (gaz > gazMax) {
-    gazFlag = true;
+    gazFlag = true;             // Indique que l'alarme de gaz doit s'allumer
   } else if (gaz < gazMin) {
-    gazFlag = false;
-  }
+    gazFlag = false;            // Indique que l'alarme de gaz doit s'éteindre
+  } 
 }
 
 void checkLumiere() {
-  int lumiere = analogRead(lumierePin);
+  int lumiere = analogRead(lumierePin); // Lit la valeur de lumière
   if (lumiere < lumiereMin) {
-    lumiereFlag = true;
+    lumiereFlag = true;                 // Indique qu'on doit vérifier le détecteur de mouvement
   } else if (lumiere > lumiereMax) {
     lumiereFlag = false;
-    mouvementFlag = false;
+    mouvementFlag = false;              // Si c'est le jour, on ne vérifie plus le détecteur de mouvement
   }
 }
 
 void checkMouvement() {
-  bool mouvement = digitalRead(mouvementPin);
+  bool mouvement = digitalRead(mouvementPin); // Lit la valeur du détecteur de mouvement
   if (mouvement) {
-    mouvementFlag = true;
+    mouvementFlag = true;                     // Indique que l'alarme de mouvement doit s'allumer
   } else {
-    mouvementFlag = false;
+    mouvementFlag = false;                    // Indique que l'alarme de mouvement doit s'allumer
   }
 }
 
 void checkPluie() {
-  int pluie = analogRead(pluiePin);
+  int pluie = analogRead(pluiePin);           // Lit la valeur de pluie
   if (pluie > pluieMax) {
-    pluieFlag = true;
-    Serial.println("Y MOUILLE"); // move
-    servoFenetre.write(180); // move
+    pluieFlag = true;                         // Indique que l'alarme de pluie doit s'allumer
   } else if (pluie < pluieMin) {
-    pluieFlag = false;
+    pluieFlag = false;                        // Indique que l'alarme de pluie doit s'éteindre
   }
 }
 
 void checkTerre() {
-  int terre = analogRead(terrePin);
+  int terre = analogRead(terrePin);           // Lit la valeur d'humidité de la terre
   if (terre > terreMin) {
-    terreFlag = true;
+    terreFlag = true;                         // Indique que l'alarme d'humidité doit s'allumer
   } else if (terre < terreMax) {
-    terreFlag = false;
-  }
+    terreFlag = false;                        // Indique que l'alarme d'humidité doit s'éteindre
+  } 
 }
 
 void activerAlarmes() {
-  if (gazFlag && !gazAlarme) {
-    gazAlarme = true;
+  if (gazFlag && !gazAlarme) {                    
+    gazAlarme = true;                            // Allume l'alarme si elle ne l'est pas déjà
+    digitalWrite(fanSensAntiHoraire, HIGH);      // Allume la fan dans le sens anti-horaire
+    digitalWrite(fanSensHoraire, LOW);
+    servoFenetre.write(0);                       // Ouvre la fenêtre
+    ajouterAlarmeCourante(gazAlarmeTag);
+    ajouterAlarmeHistorique(gazAlarmeTag);
   } else if (!gazFlag && gazAlarme) {
-    gazAlarme = false;
+    gazAlarme = false;                           // Ferme l'alarme si elle ne l'est pas déjà
+    digitalWrite(fanSensAntiHoraire, LOW);       // Ferme la fan
+    digitalWrite(fanSensHoraire, LOW);
+    enleverAlarmeCourante(gazAlarmeTag);
   }
 
   if (mouvementFlag && !mouvementAlarme) {
     mouvementAlarme = true;
+    ajouterAlarmeCourante(mouvementAlarmeTag);
+    ajouterAlarmeHistorique(mouvementAlarmeTag);
   } else if (!mouvementFlag && mouvementAlarme) {
     mouvementAlarme = false;
+    enleverAlarmeCourante(mouvementAlarmeTag);
+  }
+
+  if (lumiereFlag) {
+    digitalWrite(ledExterieurPin, HIGH);       // Allume/Éteint la lumière extérieur s'il fait noir dehors
+  } else {
+    digitalWrite(ledExterieurPin, LOW);
   }
 
   if (pluieFlag && !pluieAlarme) {
     pluieAlarme = true;
+    Serial.println("Y MOUILLE");
+    servoFenetre.write(180); // Ferme la fenêtre
+    ajouterAlarmeCourante(pluieAlarmeTag);
+    enleverAlarmeHistorique(pluieAlarmeTag);
   } else if (!pluieFlag && pluieAlarme) {
     pluieAlarme = false;
+    enleverAlarmeCourante(pluieAlarmeTag);
   }
 
   if (terreFlag && !terreAlarme) {
     terreAlarme = true;
+    ajouterAlarmeCourante(terreAlarmeTag);
+    enleverAlarmeHistorique(terreAlarmeTag);
   } else if (!terreFlag && terreAlarme) {
     terreAlarme = false;
+    enleverAlarmeCourante(terreAlarmeTag);
   }
 }
 
 
 void traiterAlarmes() {
-  
+  if (gazAlarme) {
+    beep(1);
+  }
+  if (mouvementAlarme) {
+    beep(2);
+  }
+  if (pluieAlarme) {
+    beep(3);
+  }
+  if (terreAlarme) {
+    beep(4);
+  }
+}
+
+void beep(int x) {
+  for (int i = 0; i < x; i++) {
+    tone(buzzerPin, 440, 100);  // Fait jouer la fréquence 440 pendant 100 millisecondes
+    noTone(buzzerPin);          // Éteint le buzzer
+    delay(50);
+  }
+}
+
+void ajouterAlarmeCourante(int alarme)
+{
+  alarmesCourantes[alarme - 1] = true; // Active l'alarme dans la pile
+}
+
+void enleverAlarmeCourante(int alarme)
+{
+  alarmesCourantes[alarme - 1] = false; // Désactive l'alarme dans la pile
+}
+
+void ajouterAlarmeHistorique(int alarme)
+{
+  alarmesHistorique[alarme - 1] = true;
+}
+
+void enleverAlarmeHistorique(int alarme)
+{
+  alarmesHistorique[alarme - 1] = false;
 }
 
 
@@ -183,12 +255,109 @@ void traiterAlarmes() {
 
 
 
+void traiterCommandes() {
+  int commande = 0; // Valeur de la commande reçu sur le port série, par la console ou le bluetooth
+  if (Serial.available() > 0)
+  {
+    commande = Serial.read();
+    switch (commande) {
+      case 't':
+        String valeurString = Serial.readStringUntil('#'); // Lit la valeur avant le #
+        int angle = String(valeurString).toInt();          // Transforme la valeur en integer
+        servoFenetre.write(angle);
+        delay(300);
+        break;
+      case 'u':
+        String valeurString = Serial.readStringUntil('#');
+        int angle = String(valeurString).toInt();
+        servoPorte.write(angle);
+        delay(300);
+        break;
+      case 'v':
+        String valeurString = Serial.readStringUntil('#');
+        int intensite = String(valeurString).toInt();
+        analogWrite(ledInterieurPin, intensite);
+        break;
+      case 'w':
+        String valeurString = Serial.readStringUntil('#');
+        int intensite = String(valeurString).toInt();
+        digitalWrite(fanSensAntiHoraire, LOW);
+        analogWrite(fanSensHoraire, intensite);
+        break;
 
+    }
+  } // Pourquoi les 2 switchs sont séparés?? Je vais les laisser comme ça pour l'instant
 
-
-
-
-
+  switch (commande) {
+    case 'a':
+      digitalWrite(ledExterieurPin, HIGH);
+      break;
+    case 'b':
+      digitalWrite(ledExterieurPin, LOW);
+      break;
+    case 'c':
+      digitalWrite(relaiPin, HIGH);
+      break;
+    case 'd':
+      digitalWrite(relaiPin, LOW);
+      break;
+    case 'e':
+      // Musique
+      break;
+    case 'f':
+      // Musique 2
+      break;
+    case 'g':
+      noTone(buzzerPin);
+      break;
+    case 'h':
+      Serial.println(analogRead(lumierePin)); // Imprime la valeur du détecteur de lumière
+      delay(100);
+      break;
+    case 'i':
+      Serial.println(analogRead(gazPin)); // Imprime la valeur du détecteur de gaz
+      delay(100);
+      break;
+    case 'j':
+      Serial.println(analogRead(terrePin)); // Imprime la valeur du détecteur d'humidité de la terre
+      delay(100);
+      break;
+    case 'k':
+      Serial.println(analogRead(pluiePin)); // Imprime la valeur du détecteur de pluie
+      delay(100);
+      break;
+    case 'l':
+      servoFenetre.write(180); // Fermer la fenêtre
+      delay(500);
+      break;
+    case 'm':
+      servoFenetre.write(0); // Ouvrir la fenêtre
+      delay(500);
+      break;
+    case 'n':
+      servoPorte.write(180); // Fermer la porte
+      delay(500);
+      break;
+    case 'o':
+      servoPorte.write(0); // Ouvrir la porte
+      delay(500);
+      break;
+    case 'p':
+      digitalWrite(ledInterieurPin, HIGH);
+      break;
+    case 'q':
+      digitalWrite(ledInterieurPin, LOW);
+      break;
+    case 'r':
+      digitalWrite(fanSensAntiHoraire, LOW); // Allume la fan dans le sens anti-horaire
+      digitalWrite(fanSensHoraire, HIGH);
+      break;
+    case 's':
+      digitalWrite(fanSensAntiHoraire, LOW); // Ferme la fan
+      digitalWrite(fanSensHoraire, LOW);
+      break;
+  }
+}
 
 
 
