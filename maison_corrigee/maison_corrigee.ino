@@ -7,6 +7,7 @@
 #include <Servo.h>              // Gestion des servos-moteurs
 #include <Wire.h>               // Gestion de la connection I2C
 #include <LiquidCrystal_I2C.h>  // Gestion de l'écran LCD avec I2C
+#include <SoftwareSerial.h>     // Gestion du port série virtuel
 
 // Adresse de communication avec l'écran I2C est 0x27, 16 caractères par ligne, 2 lignes au total
 LiquidCrystal_I2C mylcd(0x27, 16, 2);
@@ -14,6 +15,8 @@ LiquidCrystal_I2C mylcd(0x27, 16, 2);
 // Instances des servos-moteurs
 Servo servoFenetre;
 Servo servoPorte;
+
+SoftwareSerial Mega(3, 2); // Instantiation d'un port série (Rx, Tx) (Vert, Jaune)
 
 const int mouvementPin = 2; // Pin du détecteur de mouvement
 const int buzzerPin = 3;
@@ -62,6 +65,7 @@ bool alarmesHistorique[] = {false, false, false, false};
 
 void setup() {
   Serial.begin(9600);       // Activer la console
+  Mega.begin(9600);         // Activer le port série pour la communication avec la maison
 
   mylcd.init();             // Initialiser l'écran LCD
   mylcd.backlight();        // Allumer l'écran LCD
@@ -73,7 +77,7 @@ void setup() {
   servoFenetre.write(0);                // Met le servo-moteur à la position 0°
   servoPorte.write(0);
 
-  pinMode(mouvementPin, INPUT);     // Met les pins en mode lecture
+  //pinMode(mouvementPin, INPUT);     // Met les pins en mode lecture
   pinMode(boutonGauchePin, INPUT);
   pinMode(boutonDroitPin, INPUT);
   pinMode(gazPin, INPUT);
@@ -81,7 +85,7 @@ void setup() {
   pinMode(terrePin, INPUT);
   pinMode(pluiePin, INPUT);
   
-  pinMode(buzzerPin, OUTPUT);       // Met les pins en mode écriture
+  //pinMode(buzzerPin, OUTPUT);       // Met les pins en mode écriture
   pinMode(ledInterieurPin, OUTPUT);
   pinMode(ledExterieurPin, OUTPUT);
   pinMode(fanSensHoraire, OUTPUT);
@@ -257,36 +261,50 @@ void enleverAlarmeHistorique(int alarme)
 
 void traiterCommandes() {
   int commande = 0; // Valeur de la commande reçu sur le port série, par la console ou le bluetooth
+
+  if (Mega.available())
+  {
+    commande = Mega.read();
+    Serial.print("Du Mega: ");
+    Serial.println(commande);
+  }
+
   if (Serial.available() > 0)
   {
     commande = Serial.read();
+    Mega.write(commande);
+    String valeurString;
+    int angle;
+    int intensite;
     switch (commande) {
       case 't':
-        String valeurString = Serial.readStringUntil('#'); // Lit la valeur avant le #
-        int angle = String(valeurString).toInt();          // Transforme la valeur en integer
+        valeurString = Serial.readStringUntil('#'); // Lit la valeur avant le #
+        angle = String(valeurString).toInt();          // Transforme la valeur en integer
         servoFenetre.write(angle);
         delay(300);
         break;
       case 'u':
-        String valeurString = Serial.readStringUntil('#');
-        int angle = String(valeurString).toInt();
+        valeurString = Serial.readStringUntil('#');
+        angle = String(valeurString).toInt();
         servoPorte.write(angle);
         delay(300);
         break;
       case 'v':
-        String valeurString = Serial.readStringUntil('#');
-        int intensite = String(valeurString).toInt();
+        valeurString = Serial.readStringUntil('#');
+        intensite = String(valeurString).toInt();
         analogWrite(ledInterieurPin, intensite);
         break;
       case 'w':
-        String valeurString = Serial.readStringUntil('#');
-        int intensite = String(valeurString).toInt();
+        valeurString = Serial.readStringUntil('#');
+        intensite = String(valeurString).toInt();
         digitalWrite(fanSensAntiHoraire, LOW);
         analogWrite(fanSensHoraire, intensite);
         break;
 
     }
   } // Pourquoi les 2 switchs sont séparés?? Je vais les laisser comme ça pour l'instant
+
+
 
   switch (commande) {
     case 'a':
